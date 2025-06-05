@@ -1,15 +1,19 @@
-#include<string>
+#pragma once
+#include <vector>
+#include <string>
+
+enum class DeltaType { COPY, INSERT };
+
 struct DeltaInstruction {
-    enum class Type { COPY, INSERT };
-    Type type;
+    DeltaType type;
+    size_t offset; // used for COPY
+    std::vector<char> data; // used for INSERT
 
-    size_t offset = 0;
-    size_t length = 0;
-    std::string data;
+    static DeltaInstruction makeCopy(size_t offset) {
+        return { DeltaType::COPY, offset, {} };
+    }
 
-    DeltaInstruction(Type t, size_t o, size_t l)
-        : type(t), offset(o), length(l) {}
-
-    DeltaInstruction(Type t, const std::string& d)
-        : type(t), offset(0), length(d.size()), data(d) {}
+    static DeltaInstruction makeInsert(const std::vector<char>& data) {
+        return { DeltaType::INSERT, 0, data };
+    }
 };
