@@ -1,8 +1,8 @@
 #pragma once
 #include<string>
 #include<vector>
-#include "common/block_info.hpp"
-#include "common/delta_instruction.hpp"
+#include "../common/block_info.hpp"
+#include "../common/delta_instruction.hpp"
 class DestinationManager{
 public:
     DestinationManager(const std::string& destinationPath,size_t blockSize);
