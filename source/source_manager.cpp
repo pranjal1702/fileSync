@@ -4,14 +4,39 @@
 #include<iostream>
 #include<vector>
 #include<deque>
+#include<utility>
+#include<unordered_set>
+
+struct PairHash {
+    template <class T1, class T2>
+    std::size_t operator () (const std::pair<T1, T2>& p) const {
+        auto h1 = std::hash<T1>{}(p.first);
+        auto h2 = std::hash<T2>{}(p.second);
+
+        // A common way to combine hashes (boost::hash_combine equivalent)
+        // You can experiment with other combinations if needed, but this is a good starting point.
+        return h1 ^ (h2 << 1);
+    }
+};
+
 SourceManager::SourceManager(const std::string& sourcePath,const std::vector<BlockInfo>& destBlocks,size_t blockSize) : sourcePath_(sourcePath),destBlocks_(std::move(destBlocks)),blockSize_(blockSize){}
 
 std::vector<DeltaInstruction> SourceManager::getDelta() const{
-    std::unordered_map<uint32_t, std::vector<BlockInfo>> destHashMap;
+    // std::unordered_map<uint32_t, std::vector<BlockInfo>> destHashMap;
+    
     // creating hashmap using destBlocks_
+    // for(auto blockInfo:destBlocks_){
+    //     destHashMap[blockInfo.weakHash].push_back(blockInfo);
+    // }
+
+    std::unordered_map<std::pair<uint32_t,std::string>,size_t,PairHash> destHashToOffset;  // {weakHash,strongHash} --> offset
+    std::unordered_set<uint32_t> weakHashSet;
+
     for(auto blockInfo:destBlocks_){
-        destHashMap[blockInfo.weakHash].push_back(blockInfo);
+        destHashToOffset[{blockInfo.weakHash,blockInfo.strongHash}]=blockInfo.offset;
+        weakHashSet.insert(blockInfo.weakHash);
     }
+
 
     std::vector<DeltaInstruction> deltas;
     std::ifstream file(sourcePath_, std::ios::binary);
@@ -41,32 +66,29 @@ std::vector<DeltaInstruction> SourceManager::getDelta() const{
     while(true){
         if(bytesInWindow<blockSize_){
             // just insert that complete window pendingInsert and that will be at the end of file
-            std::cout<<" xx"<<buffer.data()<<'\n';
             for(size_t ind=0;ind<bytesInWindow;ind++) pendingInsert.push_back(buffer[ind]);
             break;
         }
 
         bool matched=false;
-        auto it=destHashMap.find(hash);
-        if(it!=destHashMap.end()){
+        auto it=weakHashSet.find(hash);
+        if(it!=weakHashSet.end()){
             // weak hash matches something lets confirm with strong hash
             std::vector<char> snapshot(blockSize_);
             for (size_t i = 0; i < blockSize_; ++i) {
                 snapshot[i] = buffer[(startIndex + i) % blockSize_];
             }
             std::string strongHashForWindow=HashUtils::computeStrongHash(snapshot.data(),blockSize_);
-            for(const auto& candidate:it->second){
-                if(candidate.strongHash==strongHashForWindow){
-                    // exact match found
-                    matched=true;
-                    if (!pendingInsert.empty()) {
-                        // these characters are not matched and need to be inserted
-                        deltas.push_back(DeltaInstruction::makeInsert(pendingInsert));
-                        pendingInsert.clear();
-                    }
-                    deltas.push_back(DeltaInstruction::makeCopy(candidate.offset));
-                    break;
+            auto ptr=destHashToOffset.find({hash,strongHashForWindow});
+            if(ptr!=destHashToOffset.end()){
+                // exact match found
+                matched=true;
+                if (!pendingInsert.empty()) {
+                    // these characters are not matched and need to be inserted
+                    deltas.push_back(DeltaInstruction::makeInsert(pendingInsert));
+                    pendingInsert.clear();
                 }
+                deltas.push_back(DeltaInstruction::makeCopy(ptr->second));
             }
         }
 
@@ -105,6 +127,9 @@ std::vector<DeltaInstruction> SourceManager::getDelta() const{
             hash = (hash * base + static_cast<unsigned char>(inByte)) % mod;
         }
     }
+
+    if (!pendingInsert.empty())
+        deltas.push_back(DeltaInstruction::makeInsert(pendingInsert));
 
     return deltas;
 }
