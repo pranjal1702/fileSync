@@ -41,6 +41,7 @@ std::vector<DeltaInstruction> SourceManager::getDelta() const{
     while(true){
         if(bytesInWindow<blockSize_){
             // just insert that complete window pendingInsert and that will be at the end of file
+            std::cout<<" xx"<<buffer.data()<<'\n';
             for(size_t ind=0;ind<bytesInWindow;ind++) pendingInsert.push_back(buffer[ind]);
             break;
         }
@@ -87,7 +88,15 @@ std::vector<DeltaInstruction> SourceManager::getDelta() const{
             char outByte = buffer[startIndex];
             char inByte;
             file.read(&inByte, 1);
-            if (!file) break;
+            if (!file) {
+                // all remaining thing to be inserted in pending 
+                int tempInd=(startIndex+1)%blockSize_;
+                while(tempInd!=startIndex){
+                    pendingInsert.push_back(buffer[tempInd]);
+                    tempInd=(tempInd+1)%blockSize_;
+                }
+                break;
+            }
             offset += 1;
             buffer[startIndex] = inByte;
             startIndex = (startIndex + 1) % blockSize_;
@@ -96,8 +105,6 @@ std::vector<DeltaInstruction> SourceManager::getDelta() const{
             hash = (hash * base + static_cast<unsigned char>(inByte)) % mod;
         }
     }
-    if (!pendingInsert.empty())
-        deltas.push_back(DeltaInstruction::makeInsert(pendingInsert));
 
     return deltas;
 }
