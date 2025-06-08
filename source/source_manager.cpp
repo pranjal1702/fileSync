@@ -1,59 +1,49 @@
 #include "source_manager.hpp"
 #include "../common/hash_utils.hpp"
+#include "../common/thread_pool.hpp"
 #include <fstream>
 #include<iostream>
 #include<vector>
 #include<deque>
-#include<utility>
-#include<unordered_set>
 
-struct PairHash {
-    template <class T1, class T2>
-    std::size_t operator () (const std::pair<T1, T2>& p) const {
-        auto h1 = std::hash<T1>{}(p.first);
-        auto h2 = std::hash<T2>{}(p.second);
 
-        // A common way to combine hashes (boost::hash_combine equivalent)
-        // You can experiment with other combinations if needed, but this is a good starting point.
-        return h1 ^ (h2 << 1);
-    }
-};
-
-SourceManager::SourceManager(const std::string& sourcePath,const std::vector<BlockInfo>& destBlocks,size_t blockSize) : sourcePath_(sourcePath),destBlocks_(std::move(destBlocks)),blockSize_(blockSize){}
-
-std::vector<DeltaInstruction> SourceManager::getDelta() const{
-    // std::unordered_map<uint32_t, std::vector<BlockInfo>> destHashMap;
-    
-    // creating hashmap using destBlocks_
-    // for(auto blockInfo:destBlocks_){
-    //     destHashMap[blockInfo.weakHash].push_back(blockInfo);
-    // }
-
-    std::unordered_map<std::pair<uint32_t,std::string>,size_t,PairHash> destHashToOffset;  // {weakHash,strongHash} --> offset
-    std::unordered_set<uint32_t> weakHashSet;
-
+SourceManager::SourceManager(const std::string& sourcePath,const std::vector<BlockInfo>& destBlocks,size_t blockSize) : sourcePath_(sourcePath),destBlocks_(std::move(destBlocks)),blockSize_(blockSize){
     for(auto blockInfo:destBlocks_){
         destHashToOffset[{blockInfo.weakHash,blockInfo.strongHash}]=blockInfo.offset;
         weakHashSet.insert(blockInfo.weakHash);
     }
+}
 
-
-    std::vector<DeltaInstruction> deltas;
+// Processing in chunks
+// it is confirm that chunkSize>blockSize_
+// chunk is to be very large
+void SourceManager::ProcessChunk(size_t chunkSize,size_t start,size_t chunkId,std::vector<std::vector<DeltaInstruction>> &result) const{
     std::ifstream file(sourcePath_, std::ios::binary);
     if (!file) {
-        std::cerr << "Error opening source file\n";
-        return deltas;
+        std::cerr << "Error opening file: " << sourcePath_ << '\n';
+        return;
     }
 
+    file.seekg(0, std::ios::end);         // move to end
+    size_t fileSize = file.tellg();       // get position = size
+    file.seekg(start, std::ios::beg);     // seek back to start for reading
+
+    if (start >= fileSize) {
+        std::cerr << "Start offset " << start << " is beyond file size for chunk " << chunkId<< " File size"<<fileSize << '\n';
+    }
+
+    std::vector<DeltaInstruction> deltas;  // to store the delta instructions
+
     std::vector<char> buffer(blockSize_);
-    std::deque<char> window;
     std::vector<char> pendingInsert;  // to be inserted when no match has been found
 
-    size_t offset = 0,startIndex=0;   // startIndex is for correct order in buffer due to circular shift
+    size_t offset = start,startIndex=0;   // startIndex is for correct order in buffer due to circular shift
+    size_t totalBytesRead=0; // will be helpful in keeping track so that we do not step in the next chunk
     file.read(buffer.data(), blockSize_);
 
     size_t bytesInWindow = file.gcount();
-    if (bytesInWindow == 0) return deltas;
+    totalBytesRead+=bytesInWindow;
+    if (bytesInWindow == 0) return ;
 
     uint32_t hash = HashUtils::computeWeakHash(buffer.data(), bytesInWindow);
 
@@ -97,8 +87,10 @@ std::vector<DeltaInstruction> SourceManager::getDelta() const{
             offset += blockSize_;
             file.clear();
             file.seekg(offset);
-            file.read(buffer.data(), blockSize_);
+            size_t bytesToRead=std::min(blockSize_,chunkSize-totalBytesRead);  // if going outside chunk then don't read it
+            file.read(buffer.data(), bytesToRead);
             bytesInWindow = file.gcount();
+            totalBytesRead+=bytesInWindow;
             if (bytesInWindow==0) break;
             startIndex=0;
             hash = HashUtils::computeWeakHash(buffer.data(), bytesInWindow);
@@ -110,7 +102,8 @@ std::vector<DeltaInstruction> SourceManager::getDelta() const{
             char outByte = buffer[startIndex];
             char inByte;
             file.read(&inByte, 1);
-            if (!file) {
+            totalBytesRead++;
+            if (!file||totalBytesRead>chunkSize) {
                 // all remaining thing to be inserted in pending 
                 int tempInd=(startIndex+1)%blockSize_;
                 while(tempInd!=startIndex){
@@ -130,6 +123,50 @@ std::vector<DeltaInstruction> SourceManager::getDelta() const{
 
     if (!pendingInsert.empty())
         deltas.push_back(DeltaInstruction::makeInsert(pendingInsert));
+    result[chunkId]=std::move(deltas);
 
-    return deltas;
+}
+
+
+std::vector<DeltaInstruction> SourceManager::getDelta() const{
+
+    const size_t THREAD_COUNT = 4;
+    const size_t CHUNK_SIZE = 256;  // 64 bytes just for testing
+
+    std::ifstream file(sourcePath_, std::ios::binary | std::ios::ate);
+    if (!file) {
+        std::cerr << "Failed to open source file\n";
+        return {};
+    }
+    size_t fileSize = file.tellg();
+    size_t totalChunks = fileSize/CHUNK_SIZE;
+    if(fileSize%CHUNK_SIZE) totalChunks++;  // last chunk not complete
+
+    std::vector<std::vector<DeltaInstruction>> chunksResult(totalChunks);
+
+    ThreadPool pool(THREAD_COUNT);
+    std::vector<std::future<void>> futures;
+
+    for (size_t chunkId = 0; chunkId < totalChunks; ++chunkId) {
+        size_t start = chunkId * CHUNK_SIZE;
+
+        futures.emplace_back(
+            pool.submit([=,&chunksResult]() {
+                this->ProcessChunk(CHUNK_SIZE, start, chunkId, chunksResult);
+            })
+        );
+    }
+
+    // Wait for all threads to complete
+    for (auto& f : futures) {
+        f.get();
+    }
+
+    std::vector<DeltaInstruction> combinedResult;
+    for (const auto& chunk : chunksResult) {
+        combinedResult.insert(combinedResult.end(), chunk.begin(), chunk.end());
+    }
+
+    return combinedResult;
+
 }
