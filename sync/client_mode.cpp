@@ -125,13 +125,13 @@ void ClientMode::handleCommand(const std::string& cmd) {
 // Help for commands
 void ClientMode::printHelp() const {
     std::cout << "Available Commands:\n"
-              << "  connect <ip> <port>                          Connect to server (max 3)\n"
-              << " push <session_id> <local_path> <remote_path>  Push the local content to remote file"
-              << " pull <session_id> <remote_path> <local_path>  Pull the remote content to local file"
-              << "  disconnect <session_id>                      Disconnect from server\n"
-              << "  list                                         List active sessions\n"
-              << "  help                                         Show this help\n"
-              << "  exit                                         Exit client\n";
+              << " connect <ip> <port>                           Connect to server (max 3)\n"
+              << " push <session_id> <local_path> <remote_path>  Push the local content to remote file\n"
+              << " pull <session_id> <remote_path> <local_path>  Pull the remote content to local file\n"
+              << " disconnect <session_id>                       Disconnect from server\n"
+              << " list                                          List active sessions\n"
+              << " help                                          Show this help\n"
+              << " exit                                          Exit client\n";
 }
 
 void ClientMode::listSessions() const {

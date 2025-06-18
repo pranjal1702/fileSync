@@ -2,6 +2,7 @@
 #include "../common/thread_pool.hpp"
 #include "../common/block_info.hpp"
 #include "../destination/destination_manager.hpp"
+#include "../source/source_manager.hpp"
 #include "../common/data_transfer.hpp"
 #include <iostream>
 #include <cstring>
@@ -105,7 +106,7 @@ void ServerMode::handleClient(int clientSocket){
     if(mode=="PUSH"){
         pushTransaction(clientSocket);
     }else if(mode=="PULL"){
-
+        pullTransaction(clientSocket);
     }else{
         std::cerr << "Invalid mode\n";
         close(clientSocket);
@@ -146,4 +147,38 @@ bool ServerMode::pushTransaction(int clientSocket) {
     dest.applyDelta(delta);
 
     return true;
+}
+
+bool ServerMode::pullTransaction(int clientSocket){
+    std::string remotePath;
+
+    DataTransfer dataPipe;
+    // 1. Receive remote file path
+    if (!dataPipe.receiveFilePath(clientSocket,remotePath)){ 
+        std::cerr << "Failed to receive remote path\n";
+        return false;
+    }
+
+    // recieve the block hashes
+    std::vector<BlockInfo> blockHashes;
+    if(dataPipe.receiveBlockHashes(clientSocket,blockHashes)){
+        std::cout<<"Block Hashes recieved successfully\n";
+    }else{
+        std::cerr<<"Error while recieving block hashes\n";
+        return false;
+    }
+
+    // generate deltas
+    SourceManager source(remotePath,blockHashes,8);  // 8 is taken as block size
+    std::vector<DeltaInstruction> deltas=source.getDelta();
+    // send this deltas
+    if(dataPipe.serializeAndSendDeltaInstructions(clientSocket,deltas)){
+        std::cout<<"Deltas sent successfully\n";
+    }else{
+        std::cerr<<"Error while sending deltas\n";
+        return false;
+    }
+
+    return true;
+
 }

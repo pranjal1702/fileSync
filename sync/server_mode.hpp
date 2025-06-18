@@ -19,4 +19,5 @@ private:
     void acceptConnections();
     void handleClient(int clientSocket);
     bool pushTransaction(int clientSocket);
+    bool pullTransaction(int clientSocket);
 };

@@ -1,6 +1,7 @@
 #include "client_session.hpp"
 #include "../common/data_transfer.hpp"
 #include "../source/source_manager.hpp"
+#include "../destination/destination_manager.hpp"
 #include <iostream>
 #include <unistd.h>
 #include <arpa/inet.h>
@@ -48,6 +49,11 @@ void ClientSession::runTransaction(const std::string request,const std::string& 
 
     if(request=="push"){
         pushTransaction(localPath,remotePath);
+    }else if(request=="pull"){
+        pullTransaction(localPath,remotePath);
+    }else{
+        std::cerr << "[Session " << sessionId_ << "] Invalid request.\n";
+        return;
     }
 }
 
@@ -111,4 +117,51 @@ bool ClientSession::pushTransaction(const std::string& loaclPath,const std::stri
     std::cout<<"Content Pushed to the remote file\n";
     
     return true;
+}
+
+bool ClientSession::pullTransaction(const std::string& loaclPath,const std::string& remotePath){
+    std::string command = "PULL\n";
+    if (send(socketFD_, command.c_str(), command.size(), 0) != (ssize_t)command.size()) {
+        std::cerr << "[Session " << sessionId_ << "] Failed to send command\n";
+        return false;
+    }
+    DataTransfer dataPipe; // used for data transfer
+
+    // sending the remotePath
+    
+    if(dataPipe.sendFilePath(socketFD_,remotePath)){
+        std::cout<<"Push request send to the remote machine\n";
+    }else{
+        std::cerr << "[Session " << sessionId_ << "] Failed to send remote file path\n";
+        return false;
+    }
+
+    DestinationManager destination(loaclPath,8);  // using block size = 8
+    // now this local machine will generate the hashes
+    std::cout<<"Generating the block hashes...\n";
+    std::vector<BlockInfo> blockHashes= destination.getFileBlockHashes();
+
+    // sending this block hashes
+    std::cout<<"Sending block hashes...\n";
+    if(dataPipe.serializeAndSendBlockHashes(socketFD_,blockHashes)){
+        std::cout<<"Block Hashes sent successfully\n";
+    }else{
+        std::cerr << "[Session " << sessionId_ << "] Failed to send block hashes\n";
+        return false;
+    }
+
+    // recieve the delta instructions
+    std::vector<DeltaInstruction> deltas;
+    if(dataPipe.receiveDelta(socketFD_,deltas)){
+        std::cout<<"Delta Instructions recieved successfully\n";
+    }else{
+        std::cerr<<"[Session " << sessionId_ << "] Failed to get delta instructions\n";
+        return false;
+    }
+
+    // now apply this delta
+    destination.applyDelta(deltas);
+
+    return true;
+
 }
