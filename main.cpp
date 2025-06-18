@@ -1,16 +1,22 @@
 #include "sync/sync_engine.hpp"
+#include "sync/server_mode.hpp"
+#include "sync/client_mode.hpp"
 #include<iostream>
 int main(int argc, char** argv) {
-    if (argc < 3) {
+
+    if(argc<2){
         std::cerr << "Insufficient arguments\n";
         return 1;
     }
 
-    std::string sourcePath = argv[1],destPath=argv[2];
-    size_t blockSize = 4; // for easy testing
-
-    SyncEngine syncFiles(sourcePath,destPath,blockSize);
-    syncFiles.syncFile();
+    std::string mode=argv[1];
+    if(mode=="server"){
+        ServerMode server(8080);
+        server.startServer();
+    }else{
+        ClientMode client;
+        client.startCLI();
+    }
 
     return 0;
 }
