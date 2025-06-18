@@ -52,7 +52,37 @@ void ClientMode::handleCommand(const std::string& cmd) {
 
         sessions_[idx] = std::move(session);
 
-    } else if (keyword == "send") {
+    }else if(keyword=="push"){
+        int sessionId;
+        std::string localPath,remotePath;
+        if (!(iss >> sessionId >> localPath >> remotePath)) {
+            std::cerr << "Usage: push <session_id> <local_path> <remote_path>\n";
+            return;
+        }
+        if (sessionId < 0 || sessionId >= (int)sessions_.size() || !sessions_[sessionId]) {
+            std::cerr << "Invalid session ID.\n";
+            return;
+        }
+        std::thread([this, sessionId, localPath,remotePath]() {
+            sessions_[sessionId]->runTransaction("push",localPath,remotePath);
+        }).detach();
+
+    }else if(keyword=="pull"){
+        int sessionId;
+        std::string localPath,remotePath;
+        if (!(iss >> sessionId >> remotePath >> localPath)) {
+            std::cerr << "Usage: push <session_id> <remote_path> <local_path>\n";
+            return;
+        }
+        if (sessionId < 0 || sessionId >= (int)sessions_.size() || !sessions_[sessionId]) {
+            std::cerr << "Invalid session ID.\n";
+            return;
+        }
+        std::thread([this, sessionId, localPath,remotePath]() {
+            sessions_[sessionId]->runTransaction("pull",localPath,remotePath);
+        }).detach();
+    }
+     else if (keyword == "send") {
         int sessionId;
         std::string filepath;
         if (!(iss >> sessionId >> filepath)) {
@@ -64,11 +94,6 @@ void ClientMode::handleCommand(const std::string& cmd) {
             std::cerr << "Invalid session ID.\n";
             return;
         }
-
-        std::thread([this, sessionId, filepath]() {
-            sessions_[sessionId]->runTransaction(filepath);
-        }).detach();
-
     } else if (keyword == "disconnect") {
         int sessionId;
         if (!(iss >> sessionId)) {
@@ -100,12 +125,13 @@ void ClientMode::handleCommand(const std::string& cmd) {
 // Help for commands
 void ClientMode::printHelp() const {
     std::cout << "Available Commands:\n"
-              << "  connect <ip> <port>         Connect to server (max 3)\n"
-              << "  send <session_id> <file>    Send filepath to server\n"
-              << "  disconnect <session_id>     Disconnect from server\n"
-              << "  list                        List active sessions\n"
-              << "  help                        Show this help\n"
-              << "  exit                        Exit client\n";
+              << "  connect <ip> <port>                          Connect to server (max 3)\n"
+              << " push <session_id> <local_path> <remote_path>  Push the local content to remote file"
+              << " pull <session_id> <remote_path> <local_path>  Pull the remote content to local file"
+              << "  disconnect <session_id>                      Disconnect from server\n"
+              << "  list                                         List active sessions\n"
+              << "  help                                         Show this help\n"
+              << "  exit                                         Exit client\n";
 }
 
 void ClientMode::listSessions() const {

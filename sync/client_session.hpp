@@ -11,7 +11,7 @@ public:
     void close();
     bool isConnected() const;
 
-    void runTransaction(const std::string& filepath); // one interaction
+    void runTransaction(const std::string request, const std::string& localPath,const std::string&remotePath); // one interaction
     std::string getInfo() const;
 
 private:
@@ -21,6 +21,6 @@ private:
     int socketFD_;
     bool connected_;
 
-    bool sendFilePath(const std::string& path);
-    bool receiveBlockHashes(std::vector<BlockInfo>& blocks);
+    bool pullTransaction(const std::string& loaclPath,const std::string& remotePath);
+    bool pushTransaction(const std::string& loaclPath,const std::string& remotePath);
 };

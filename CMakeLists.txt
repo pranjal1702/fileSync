@@ -25,6 +25,7 @@ add_executable(syncApp
     sync/client_session.cpp
     sync/server_mode.cpp
     common/thread_pool.cpp
+    common/data_transfer.cpp
 )
 
 # Link OpenSSL to the correct target

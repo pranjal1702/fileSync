@@ -1,4 +1,6 @@
 #include "client_session.hpp"
+#include "../common/data_transfer.hpp"
+#include "../source/source_manager.hpp"
 #include <iostream>
 #include <unistd.h>
 #include <arpa/inet.h>
@@ -38,63 +40,16 @@ bool ClientSession::connectToServer() {
 }
 
 // communication with the server
-void ClientSession::runTransaction(const std::string& filepath) {
+void ClientSession::runTransaction(const std::string request,const std::string& localPath,const std::string&remotePath) {
     if (!connected_) {
         std::cerr << "[Session " << sessionId_ << "] Not connected.\n";
         return;
     }
 
-    if (!sendFilePath(filepath)) {
-        std::cerr << "[Session " << sessionId_ << "] Failed to send file path.\n";
-        return;
+    if(request=="push"){
+        pushTransaction(localPath,remotePath);
     }
-
-    std::vector<BlockInfo> blocks;
-    if (!receiveBlockHashes(blocks)) {
-        std::cerr << "[Session " << sessionId_ << "] Failed to receive block hashes.\n";
-        return;
-    }
-
-    std::cout << "[Session " << sessionId_ << "] Received " << blocks.size() << " block hashes.\n";
-    // TODO: Use blocks as needed
 }
-// sending the file path
-bool ClientSession::sendFilePath(const std::string& path) {
-    uint32_t len = htonl(static_cast<uint32_t>(path.size()));
-    if (send(socketFD_, &len, sizeof(len), 0) != sizeof(len)) return false;
-    if (send(socketFD_, path.c_str(), path.size(), 0) != static_cast<ssize_t>(path.size())) return false;
-    return true;
-}
-
-// getting the block hashes from the server
-bool ClientSession::receiveBlockHashes(std::vector<BlockInfo>& blocks) {
-    uint32_t blockCountNet;
-    if (recv(socketFD_, &blockCountNet, sizeof(blockCountNet), MSG_WAITALL) != sizeof(blockCountNet)) return false;
-
-    uint32_t blockCount = ntohl(blockCountNet);
-    blocks.reserve(blockCount);
-
-    for (uint32_t i = 0; i < blockCount; ++i) {
-        uint64_t offsetNet;
-        uint32_t weakHashNet, strongLenNet;
-
-        if (recv(socketFD_, &offsetNet, sizeof(offsetNet), MSG_WAITALL) != sizeof(offsetNet)) return false;
-        if (recv(socketFD_, &weakHashNet, sizeof(weakHashNet), MSG_WAITALL) != sizeof(weakHashNet)) return false;
-        if (recv(socketFD_, &strongLenNet, sizeof(strongLenNet), MSG_WAITALL) != sizeof(strongLenNet)) return false;
-
-        uint64_t offset = be64toh(offsetNet);
-        uint32_t weakHash = ntohl(weakHashNet);
-        uint32_t strongLen = ntohl(strongLenNet);
-
-        std::vector<char> hashBuf(strongLen);
-        if (recv(socketFD_, hashBuf.data(), strongLen, MSG_WAITALL) != strongLen) return false;
-
-        blocks.emplace_back(offset, weakHash, std::string(hashBuf.begin(), hashBuf.end()));
-    }
-
-    return true;
-}
-
 
 void ClientSession::close() {
     if (connected_) {
@@ -111,4 +66,49 @@ bool ClientSession::isConnected() const {
 std::string ClientSession::getInfo() const {
     return "[Session " + std::to_string(sessionId_) + "] " + ip_ + ":" + std::to_string(port_) +
            (connected_ ? " [CONNECTED]" : " [DISCONNECTED]");
+}
+
+bool ClientSession::pushTransaction(const std::string& loaclPath,const std::string& remotePath){
+    std::string command = "PUSH\n";
+    if (send(socketFD_, command.c_str(), command.size(), 0) != (ssize_t)command.size()) {
+        std::cerr << "[Session " << sessionId_ << "] Failed to send command\n";
+        return false;
+    }
+    DataTransfer dataPipe; // used for data transfer
+
+    // sending the remotePath
+    
+    if(dataPipe.sendFilePath(socketFD_,remotePath)){
+        std::cout<<"Push request send to the remote machine\n";
+    }else{
+        std::cerr << "[Session " << sessionId_ << "] Failed to send remote file path\n";
+        return false;
+    }
+
+    // need to recieve the blockHashes from the server
+    std::vector<BlockInfo> blocks;  // this is the blockHashes
+    if(dataPipe.receiveBlockHashes(socketFD_,blocks)){
+        std::cout<<"Hashes of "<<blocks.size()<<" blocks recieved";
+    }else{
+        std::cerr << "[Session " << sessionId_ << "] Failed to recieve block hashes\n";
+        return false;
+    }
+
+    // now using this need to generate the delta and send it to the server
+    SourceManager source(loaclPath,blocks,8);  // blockSize 8 as of now
+
+    std::cout<<"Generating the delta instructions\n";
+    std::vector<DeltaInstruction> delta=source.getDelta(); 
+    // this delta is need to be send over the network
+
+    if(dataPipe.serializeAndSendDeltaInstructions(socketFD_,delta)){
+        std::cout<<"Delta instructions send successfully\n";
+    }else{
+        std::cerr << "[Session " << sessionId_ << "] Failed to send delta\n";
+        return false;
+    }
+
+    std::cout<<"Content Pushed to the remote file\n";
+    
+    return true;
 }

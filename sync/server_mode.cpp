@@ -2,6 +2,7 @@
 #include "../common/thread_pool.hpp"
 #include "../common/block_info.hpp"
 #include "../destination/destination_manager.hpp"
+#include "../common/data_transfer.hpp"
 #include <iostream>
 #include <cstring>
 #include <unistd.h>
@@ -92,51 +93,57 @@ void ServerMode::acceptConnections() {
 // handleClient for communication with the client 
 
 void ServerMode::handleClient(int clientSocket){
-    try{
-        //get the path length from the client
-        uint32_t pathLen = 0;
-        if (recv(clientSocket, &pathLen, sizeof(pathLen), MSG_WAITALL) != sizeof(pathLen)) {
-            throw std::runtime_error("Failed to read path length");
-        }
-        pathLen = ntohl(pathLen);
-
-        // recieving the file path
-        std::vector<char> buffer(pathLen);
-        if (recv(clientSocket, buffer.data(), pathLen, MSG_WAITALL) != pathLen) {
-            throw std::runtime_error("Failed to read file path");
-        }
-
-        std::string filePath(buffer.begin(), buffer.end());
-        std::cout << "[Server] Received file path: " << filePath << "\n";
-
-        DestinationManager destination(filePath,8); // blockSize 8 for now, robust logic needed for it later on
-
-        std::vector<BlockInfo> blockHashes=destination.getFileBlockHashes();  // error handling not taken care of
-
-        // sending length of the block hashes
-        uint32_t blockCount = htonl(static_cast<uint32_t>(blockHashes.size()));
-        if (send(clientSocket, &blockCount, sizeof(blockCount), 0) != sizeof(blockCount)) {
-            throw std::runtime_error("Failed to send block count");
-        }
-
-        // 4. Send each BlockInfo
-        for (const BlockInfo& b : blockHashes) {
-            uint64_t offset_net = htobe64(b.offset);
-            uint32_t weakHash_net = htonl(b.weakHash);
-            uint32_t strongLen = htonl(static_cast<uint32_t>(b.strongHash.size()));
-
-            send(clientSocket, &offset_net, sizeof(offset_net), 0);
-            send(clientSocket, &weakHash_net, sizeof(weakHash_net), 0);
-            send(clientSocket, &strongLen, sizeof(strongLen), 0);
-            send(clientSocket, b.strongHash.data(), b.strongHash.size(), 0);
-        }
-
-        std::cout << "[Server] Sent " << blockHashes.size() << " blocks to client\n";
+    char cmd[5]; // For 4-char mode + '\n'
+    ssize_t bytesRead = recv(clientSocket, cmd, sizeof(cmd), MSG_WAITALL);
+    if (bytesRead != 5|| cmd[4]!='\n' ) {
+        std::cerr << "[Server] Failed to read 5-byte command\n";
         close(clientSocket);
-
-    }catch(const std::exception& e){
-        std::cerr << "[Server] Error: " << e.what() << "\n";
-        close(clientSocket);
+        return;
     }
 
+    std::string mode(cmd, 4); // First 4 chars are the command
+    if(mode=="PUSH"){
+        pushTransaction(clientSocket);
+    }else if(mode=="PULL"){
+
+    }else{
+        std::cerr << "Invalid mode\n";
+        close(clientSocket);
+        return;
+    }
+}
+
+bool ServerMode::pushTransaction(int clientSocket) {
+    std::string remotePath;
+
+    DataTransfer dataPipe;
+    // 1. Receive remote file path
+    if (!dataPipe.receiveFilePath(clientSocket,remotePath)){ 
+        std::cerr << "Failed to receive remote path\n";
+        return false;
+    }
+
+    // 2. Get existing file block hashes
+    DestinationManager dest(remotePath, 8);  // Block size = 8
+    std::vector<BlockInfo> blockHashes = dest.getFileBlockHashes();
+
+    
+
+    // 3. Send the block hashes to the client
+    if (!dataPipe.serializeAndSendBlockHashes(clientSocket, blockHashes)) {
+        std::cerr << "Failed to send block hashes\n";
+        return false;
+    }
+
+    // 4. Receive delta from client
+    std::vector<DeltaInstruction> delta;
+    if (!dataPipe.receiveDelta(clientSocket, delta)) {
+        std::cerr << "Failed to receive delta\n";
+        return false;
+    }
+
+    // 5. Apply delta to remote file
+    dest.applyDelta(delta);
+
+    return true;
 }
