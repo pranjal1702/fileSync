@@ -6,9 +6,9 @@ SyncEngine:: SyncEngine(const std::string& sourcePath, const std::string& destPa
 
 void SyncEngine::syncFile(){
     DestinationManager dest(destPath_, blockSize_);
-    auto blocks = dest.getFileBlockHashes();
+    auto blocks = dest.getFileBlockHashes().data;
     SourceManager src(sourcePath_,blocks,blockSize_);
-    auto deltaData=src.getDelta();
+    auto deltaData=src.getDelta().data;
     dest.applyDelta(deltaData);
     std::cout<<"Sync Completed\n";
 }

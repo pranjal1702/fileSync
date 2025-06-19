@@ -126,12 +126,12 @@ bool ServerMode::pushTransaction(int clientSocket) {
 
     // 2. Get existing file block hashes
     DestinationManager dest(remotePath, 8);  // Block size = 8
-    std::vector<BlockInfo> blockHashes = dest.getFileBlockHashes();
+    Result<std::vector<BlockInfo>> blockHashesResult = dest.getFileBlockHashes();
 
     
 
     // 3. Send the block hashes to the client
-    if (!dataPipe.serializeAndSendBlockHashes(clientSocket, blockHashes)) {
+    if (!dataPipe.serializeAndSendBlockHashes(clientSocket, blockHashesResult.data)) {
         std::cerr << "Failed to send block hashes\n";
         return false;
     }
@@ -170,9 +170,9 @@ bool ServerMode::pullTransaction(int clientSocket){
 
     // generate deltas
     SourceManager source(remotePath,blockHashes,8);  // 8 is taken as block size
-    std::vector<DeltaInstruction> deltas=source.getDelta();
+    Result<std::vector<DeltaInstruction>> deltaResult=source.getDelta();
     // send this deltas
-    if(dataPipe.serializeAndSendDeltaInstructions(clientSocket,deltas)){
+    if(dataPipe.serializeAndSendDeltaInstructions(clientSocket,deltaResult.data)){
         std::cout<<"Deltas sent successfully\n";
     }else{
         std::cerr<<"Error while sending deltas\n";

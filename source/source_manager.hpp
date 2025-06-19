@@ -6,7 +6,7 @@
 #include<utility>
 #include "../common/block_info.hpp"
 #include "../common/delta_instruction.hpp"
-
+#include "../common/result.hpp"
 
 struct PairHash {
     template <class T1, class T2>
@@ -24,7 +24,7 @@ struct PairHash {
 class SourceManager{
 public:
     SourceManager(const std::string& sourcePath,const std::vector<BlockInfo>& destBlocks,size_t blockSize);
-    std::vector<DeltaInstruction> getDelta() const;
+    Result<std::vector<DeltaInstruction>> getDelta() const;
 
 private:
     void ProcessChunk(size_t chunkSize,size_t start,size_t chunkId,std::vector<std::vector<DeltaInstruction>> &result) const;

@@ -104,10 +104,10 @@ bool ClientSession::pushTransaction(const std::string& loaclPath,const std::stri
     SourceManager source(loaclPath,blocks,8);  // blockSize 8 as of now
 
     std::cout<<"Generating the delta instructions\n";
-    std::vector<DeltaInstruction> delta=source.getDelta(); 
+    Result<std::vector<DeltaInstruction>> deltaResult=source.getDelta(); 
     // this delta is need to be send over the network
 
-    if(dataPipe.serializeAndSendDeltaInstructions(socketFD_,delta)){
+    if(dataPipe.serializeAndSendDeltaInstructions(socketFD_,deltaResult.data)){
         std::cout<<"Delta instructions send successfully\n";
     }else{
         std::cerr << "[Session " << sessionId_ << "] Failed to send delta\n";
@@ -139,11 +139,11 @@ bool ClientSession::pullTransaction(const std::string& loaclPath,const std::stri
     DestinationManager destination(loaclPath,8);  // using block size = 8
     // now this local machine will generate the hashes
     std::cout<<"Generating the block hashes...\n";
-    std::vector<BlockInfo> blockHashes= destination.getFileBlockHashes();
+    Result<std::vector<BlockInfo>> blockHashesResult= destination.getFileBlockHashes();
 
     // sending this block hashes
     std::cout<<"Sending block hashes...\n";
-    if(dataPipe.serializeAndSendBlockHashes(socketFD_,blockHashes)){
+    if(dataPipe.serializeAndSendBlockHashes(socketFD_,blockHashesResult.data)){
         std::cout<<"Block Hashes sent successfully\n";
     }else{
         std::cerr << "[Session " << sessionId_ << "] Failed to send block hashes\n";

@@ -128,45 +128,51 @@ void SourceManager::ProcessChunk(size_t chunkSize,size_t start,size_t chunkId,st
 }
 
 
-std::vector<DeltaInstruction> SourceManager::getDelta() const{
+Result<std::vector<DeltaInstruction>> SourceManager::getDelta() const{
+    try{
+        const size_t THREAD_COUNT = 4;
+        const size_t CHUNK_SIZE = 256;  // 64 bytes just for testing
 
-    const size_t THREAD_COUNT = 4;
-    const size_t CHUNK_SIZE = 256;  // 64 bytes just for testing
+        std::ifstream file(sourcePath_, std::ios::binary | std::ios::ate);
+        if (!file) {
+            return Result<std::vector<DeltaInstruction>>::Error("Failed to open source file");
+        }
+        size_t fileSize = file.tellg();
+        size_t totalChunks = fileSize/CHUNK_SIZE;
+        if(fileSize%CHUNK_SIZE) totalChunks++;  // last chunk not complete
 
-    std::ifstream file(sourcePath_, std::ios::binary | std::ios::ate);
-    if (!file) {
-        std::cerr << "Failed to open source file\n";
-        return {};
+        std::vector<std::vector<DeltaInstruction>> chunksResult(totalChunks);
+
+        ThreadPool pool(THREAD_COUNT);
+        std::vector<std::future<void>> futures;
+
+        for (size_t chunkId = 0; chunkId < totalChunks; ++chunkId) {
+            size_t start = chunkId * CHUNK_SIZE;
+
+            futures.emplace_back(
+                pool.submit([=,&chunksResult]() {
+                    this->ProcessChunk(CHUNK_SIZE, start, chunkId, chunksResult);
+                })
+            );
+        }
+
+        // Wait for all threads to complete
+        for (auto& f : futures) {
+            f.get();
+        }
+
+        std::vector<DeltaInstruction> combinedResult;
+        for (const auto& chunk : chunksResult) {
+            combinedResult.insert(combinedResult.end(), chunk.begin(), chunk.end());
+        }
+        
+        return Result<std::vector<DeltaInstruction>>::Ok(combinedResult);
+
+    }catch(const std::exception &e){
+        return Result<std::vector<DeltaInstruction>>::Error(std::string("Exception in getDelta: ") + e.what());
+    }catch(...){
+        return Result<std::vector<DeltaInstruction>>::Error("Unknown error occurred in getDelta()");
     }
-    size_t fileSize = file.tellg();
-    size_t totalChunks = fileSize/CHUNK_SIZE;
-    if(fileSize%CHUNK_SIZE) totalChunks++;  // last chunk not complete
-
-    std::vector<std::vector<DeltaInstruction>> chunksResult(totalChunks);
-
-    ThreadPool pool(THREAD_COUNT);
-    std::vector<std::future<void>> futures;
-
-    for (size_t chunkId = 0; chunkId < totalChunks; ++chunkId) {
-        size_t start = chunkId * CHUNK_SIZE;
-
-        futures.emplace_back(
-            pool.submit([=,&chunksResult]() {
-                this->ProcessChunk(CHUNK_SIZE, start, chunkId, chunksResult);
-            })
-        );
-    }
-
-    // Wait for all threads to complete
-    for (auto& f : futures) {
-        f.get();
-    }
-
-    std::vector<DeltaInstruction> combinedResult;
-    for (const auto& chunk : chunksResult) {
-        combinedResult.insert(combinedResult.end(), chunk.begin(), chunk.end());
-    }
-
-    return combinedResult;
+    
 
 }

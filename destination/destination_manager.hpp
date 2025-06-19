@@ -3,11 +3,12 @@
 #include<vector>
 #include "../common/block_info.hpp"
 #include "../common/delta_instruction.hpp"
+#include "../common/result.hpp"
 class DestinationManager{
 public:
     DestinationManager(const std::string& destinationPath,size_t blockSize);
-    std::vector<BlockInfo> getFileBlockHashes() const;
-    void applyDelta(const std::vector<DeltaInstruction>& deltas);
+    Result<std::vector<BlockInfo>> getFileBlockHashes() const;
+    Result<void> applyDelta(const std::vector<DeltaInstruction>& deltas);
 private:
     std::string destPath_;
     size_t blockSize_;
