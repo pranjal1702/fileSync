@@ -3,6 +3,8 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include<iostream>
+
+
 bool DataTransfer::sendAll(int socket, const void* buffer, size_t length) {
     const char* data = static_cast<const char*>(buffer);
     while (length > 0) {
@@ -177,5 +179,60 @@ bool DataTransfer::receiveFilePath(int socketFD, std::string& filePath) {
         return false;
     }
 
+    return true;
+}
+
+
+bool DataTransfer::sendStatus(int socketFD, const StatusMessage& statusMsg) {
+    uint8_t statusByte = statusMsg.status ? 1 : 0;
+    uint32_t msgLen = htonl(statusMsg.msg.size());
+
+    // Send status (1 byte)
+    if (!sendAll(socketFD, &statusByte, sizeof(statusByte))) {
+        std::cerr << "[sendStatusMessage] Failed to send status byte\n";
+        return false;
+    }
+
+    if (!sendAll(socketFD, &msgLen, sizeof(msgLen))) {
+        std::cerr << "[sendStatusMessage] Failed to send message length\n";
+        return false;
+    }
+
+    // Send message string (msgLen bytes)
+    if (!sendAll(socketFD, statusMsg.msg.c_str(), statusMsg.msg.size())) {
+        std::cerr << "[sendStatusMessage] Failed to send message string\n";
+        return false;
+    }
+
+    return true;
+}
+
+bool DataTransfer::recieveStatus(int socket,StatusMessage& statusMessage){
+    uint8_t statusByte = 0;
+
+    // Receive the 1-byte status
+    if (!recvAll(socket, &statusByte, sizeof(statusByte))) {
+        std::cerr << "[receiveStatusMessage] Failed to receive status byte\n";
+        return false;
+    }
+
+    uint32_t msgLenNet = 0;
+
+    // Receive the 4-byte message length
+    if (!recvAll(socket, &msgLenNet, sizeof(msgLenNet))) {
+        std::cerr << "[receiveStatusMessage] Failed to receive message length\n";
+        return false;
+    }
+
+    uint32_t msgLen = ntohl(msgLenNet);
+    std::string msg;
+    msg.resize(msgLen);
+
+    if (!recvAll(socket, &msg[0], msgLen)) {
+        std::cerr << "[receiveStatusMessage] Failed to receive message string\n";
+        return false;
+    }
+
+    statusMessage = StatusMessage(statusByte != 0, std::move(msg));
     return true;
 }

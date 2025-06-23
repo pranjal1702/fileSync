@@ -1,5 +1,4 @@
 #include "client_session.hpp"
-#include "../common/data_transfer.hpp"
 #include "../source/source_manager.hpp"
 #include "../destination/destination_manager.hpp"
 #include <iostream>
@@ -53,8 +52,12 @@ void ClientSession::runTransaction(const std::string request,const std::string& 
         pullTransaction(localPath,remotePath);
     }else{
         std::cerr << "[Session " << sessionId_ << "] Invalid request.\n";
-        return;
     }
+
+    // after each transaction close the client session
+    std::cout << "[Session " << sessionId_ << "] Closing client session\n";
+    connected_ = false;
+    ::close(socketFD_);
 }
 
 void ClientSession::close() {
@@ -74,6 +77,20 @@ std::string ClientSession::getInfo() const {
            (connected_ ? " [CONNECTED]" : " [DISCONNECTED]");
 }
 
+bool  ClientSession::recievingStatus(DataTransfer &dataPipe){
+    // it returns true only when status is successfull
+    // in all other cases it returns false and socket get closed
+    // it prints message in all cases
+    StatusMessage message(false,"Unknown error occured");
+    if(dataPipe.recieveStatus(socketFD_,message)){
+        std::cout<<message.msg<<'\n';
+        return message.status;
+    }else{
+        std::cerr<<"Error while recieving status\n";
+        return false;
+    }
+}
+
 bool ClientSession::pushTransaction(const std::string& loaclPath,const std::string& remotePath){
     std::string command = "PUSH\n";
     if (send(socketFD_, command.c_str(), command.size(), 0) != (ssize_t)command.size()) {
@@ -82,6 +99,7 @@ bool ClientSession::pushTransaction(const std::string& loaclPath,const std::stri
     }
     DataTransfer dataPipe; // used for data transfer
 
+    if(!recievingStatus(dataPipe)) return false; // status for command part
     // sending the remotePath
     
     if(dataPipe.sendFilePath(socketFD_,remotePath)){
@@ -91,6 +109,11 @@ bool ClientSession::pushTransaction(const std::string& loaclPath,const std::stri
         return false;
     }
 
+    if(!recievingStatus(dataPipe)) return false;  // status for file path
+
+    // recieving the status for whether hash generation has been successfull on server side or not
+    if(!recievingStatus(dataPipe)) return false;  
+    
     // need to recieve the blockHashes from the server
     std::vector<BlockInfo> blocks;  // this is the blockHashes
     if(dataPipe.receiveBlockHashes(socketFD_,blocks)){
@@ -106,6 +129,10 @@ bool ClientSession::pushTransaction(const std::string& loaclPath,const std::stri
     std::cout<<"Generating the delta instructions\n";
     Result<std::vector<DeltaInstruction>> deltaResult=source.getDelta(); 
     // this delta is need to be send over the network
+    if(!deltaResult.success){
+        std::cerr << "[Session " << sessionId_ << "] Failed to Generate Delta: "+deltaResult.message<<'\n';
+        return false;
+    }
 
     if(dataPipe.serializeAndSendDeltaInstructions(socketFD_,deltaResult.data)){
         std::cout<<"Delta instructions send successfully\n";
@@ -113,6 +140,10 @@ bool ClientSession::pushTransaction(const std::string& loaclPath,const std::stri
         std::cerr << "[Session " << sessionId_ << "] Failed to send delta\n";
         return false;
     }
+
+    if(!recievingStatus(dataPipe)) return false; // whether deltas are successfully recieved or not
+
+    if(!recievingStatus(dataPipe)) return false;  // whether delta application was succesfull or not
 
     std::cout<<"Content Pushed to the remote file\n";
     

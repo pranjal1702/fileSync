@@ -1,5 +1,7 @@
 #pragma once
 #include "../common/block_info.hpp"
+#include "../common/data_transfer.hpp"
+
 #include<string>
 #include<vector>
 class ClientSession {
@@ -23,4 +25,5 @@ private:
 
     bool pullTransaction(const std::string& loaclPath,const std::string& remotePath);
     bool pushTransaction(const std::string& loaclPath,const std::string& remotePath);
+    bool recievingStatus(DataTransfer &dataPipe);
 };

@@ -137,7 +137,7 @@ void ClientMode::printHelp() const {
 void ClientMode::listSessions() const {
     std::cout << "Active Sessions:\n";
     for (size_t i = 0; i < sessions_.size(); ++i) {
-        if (sessions_[i]) {
+        if (sessions_[i]&&sessions_[i]->isConnected()) {
             std::cout << "  [" << i << "] " << sessions_[i]->getInfo() << "\n";
         }
     }
