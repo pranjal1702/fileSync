@@ -57,7 +57,7 @@ void ClientSession::runTransaction(const std::string request,const std::string& 
     // after each transaction close the client session
     std::cout << "[Session " << sessionId_ << "] Closing client session\n";
     connected_ = false;
-    std::cout<<">>> ";
+    std::cout<<">>> "<<std::flush;
     ::close(socketFD_);
 }
 
@@ -130,7 +130,7 @@ bool ClientSession::pushTransaction(const std::string& loaclPath,const std::stri
     }
 
     // now using this need to generate the delta and send it to the server
-    SourceManager source(loaclPath,blocks,8);  // blockSize 8 as of now
+    SourceManager source(loaclPath,blocks); 
 
     printClientMessage(sessionId_,"Generating the delta instructions");
     Result<std::vector<DeltaInstruction>> deltaResult=source.getDelta(); 
@@ -177,7 +177,7 @@ bool ClientSession::pullTransaction(const std::string& loaclPath,const std::stri
 
     if(!recievingStatus(dataPipe)) return false; // status for remote file path
 
-    DestinationManager destination(loaclPath,8);  // using block size = 8
+    DestinationManager destination(loaclPath);  // using block size = 8
     // now this local machine will generate the hashes
     printClientMessage(sessionId_,"Generating the block hashes...");
     Result<std::vector<BlockInfo>> blockHashesResult= destination.getFileBlockHashes();

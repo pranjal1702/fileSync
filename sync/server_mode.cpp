@@ -132,7 +132,7 @@ bool ServerMode::pushTransaction(int clientSocket) {
 
     
     // 2. Get existing file block hashes
-    DestinationManager dest(remotePath, 8);  // Block size = 8
+    DestinationManager dest(remotePath);  // Block size = 8
     Result<std::vector<BlockInfo>> blockHashesResult = dest.getFileBlockHashes();
 
     if(!blockHashesResult.success){
@@ -190,7 +190,7 @@ bool ServerMode::pullTransaction(int clientSocket){
     }
 
     // generate deltas
-    SourceManager source(remotePath,blockHashes,8);  // 8 is taken as block size
+    SourceManager source(remotePath,blockHashes);
     Result<std::vector<DeltaInstruction>> deltaResult=source.getDelta();
     if(deltaResult.success){
         dataPipe.sendStatus(clientSocket ,StatusMessage(true,"Delta instructions generated successfully, Sending it over the channel"));

@@ -2,8 +2,9 @@
 #include <fstream>
 #include<iostream>
 #include "../common/hash_utils.hpp"
+#include "../common/config.hpp"
 #include<stdexcept>
-DestinationManager::DestinationManager(const std::string& destinationPath,size_t blockSize) : destPath_(destinationPath),blockSize_(blockSize) {}
+DestinationManager::DestinationManager(const std::string& destinationPath) : destPath_(destinationPath),blockSize_(Config::BLOCK_SIZE) {}
 
 Result<std::vector<BlockInfo>> DestinationManager::getFileBlockHashes() const{
     std::ifstream file(destPath_, std::ios::binary);

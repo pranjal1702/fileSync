@@ -1,13 +1,14 @@
 #include "source_manager.hpp"
 #include "../common/hash_utils.hpp"
 #include "../common/thread_pool.hpp"
+#include "../common/config.hpp"
 #include <fstream>
 #include<iostream>
 #include<vector>
 #include<deque>
 
 
-SourceManager::SourceManager(const std::string& sourcePath,const std::vector<BlockInfo>& destBlocks,size_t blockSize) : sourcePath_(sourcePath),destBlocks_(std::move(destBlocks)),blockSize_(blockSize){
+SourceManager::SourceManager(const std::string& sourcePath,const std::vector<BlockInfo>& destBlocks) : sourcePath_(sourcePath),destBlocks_(std::move(destBlocks)),blockSize_(Config::BLOCK_SIZE),chunkSize_(Config::CHUNK_SIZE){
     for(auto blockInfo:destBlocks_){
         destHashToOffset[{blockInfo.weakHash,blockInfo.strongHash}]=blockInfo.offset;
         weakHashSet.insert(blockInfo.weakHash);
@@ -17,7 +18,7 @@ SourceManager::SourceManager(const std::string& sourcePath,const std::vector<Blo
 // Processing in chunks
 // it is confirm that chunkSize>blockSize_
 // chunk is to be very large
-void SourceManager::ProcessChunk(size_t chunkSize,size_t start,size_t chunkId,std::vector<std::vector<DeltaInstruction>> &result) const{
+void SourceManager::ProcessChunk(size_t start,size_t chunkId,std::vector<std::vector<DeltaInstruction>> &result) const{
     std::ifstream file(sourcePath_, std::ios::binary);
     if (!file) {
         std::cerr << "Error opening file: " << sourcePath_ << '\n';
@@ -87,7 +88,7 @@ void SourceManager::ProcessChunk(size_t chunkSize,size_t start,size_t chunkId,st
             offset += blockSize_;
             file.clear();
             file.seekg(offset);
-            size_t bytesToRead=std::min(blockSize_,chunkSize-totalBytesRead);  // if going outside chunk then don't read it
+            size_t bytesToRead=std::min(blockSize_,chunkSize_-totalBytesRead);  // if going outside chunk then don't read it
             file.read(buffer.data(), bytesToRead);
             bytesInWindow = file.gcount();
             totalBytesRead+=bytesInWindow;
@@ -103,7 +104,7 @@ void SourceManager::ProcessChunk(size_t chunkSize,size_t start,size_t chunkId,st
             char inByte;
             file.read(&inByte, 1);
             totalBytesRead++;
-            if (!file||totalBytesRead>chunkSize) {
+            if (!file||totalBytesRead>chunkSize_) {
                 // all remaining thing to be inserted in pending 
                 int tempInd=(startIndex+1)%blockSize_;
                 while(tempInd!=startIndex){
@@ -131,15 +132,14 @@ void SourceManager::ProcessChunk(size_t chunkSize,size_t start,size_t chunkId,st
 Result<std::vector<DeltaInstruction>> SourceManager::getDelta() const{
     try{
         const size_t THREAD_COUNT = 4;
-        const size_t CHUNK_SIZE = 256;  // 64 bytes just for testing
 
         std::ifstream file(sourcePath_, std::ios::binary | std::ios::ate);
         if (!file) {
             return Result<std::vector<DeltaInstruction>>::Error("Failed to open source file");
         }
         size_t fileSize = file.tellg();
-        size_t totalChunks = fileSize/CHUNK_SIZE;
-        if(fileSize%CHUNK_SIZE) totalChunks++;  // last chunk not complete
+        size_t totalChunks = fileSize/chunkSize_;
+        if(fileSize%chunkSize_) totalChunks++;  // last chunk not complete
 
         std::vector<std::vector<DeltaInstruction>> chunksResult(totalChunks);
 
@@ -147,11 +147,11 @@ Result<std::vector<DeltaInstruction>> SourceManager::getDelta() const{
         std::vector<std::future<void>> futures;
 
         for (size_t chunkId = 0; chunkId < totalChunks; ++chunkId) {
-            size_t start = chunkId * CHUNK_SIZE;
+            size_t start = chunkId * chunkSize_;
 
             futures.emplace_back(
                 pool.submit([=,&chunksResult]() {
-                    this->ProcessChunk(CHUNK_SIZE, start, chunkId, chunksResult);
+                    this->ProcessChunk(start, chunkId, chunksResult);
                 })
             );
         }

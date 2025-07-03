@@ -23,14 +23,15 @@ struct PairHash {
 
 class SourceManager{
 public:
-    SourceManager(const std::string& sourcePath,const std::vector<BlockInfo>& destBlocks,size_t blockSize);
+    SourceManager(const std::string& sourcePath,const std::vector<BlockInfo>& destBlocks);
     Result<std::vector<DeltaInstruction>> getDelta() const;
 
 private:
-    void ProcessChunk(size_t chunkSize,size_t start,size_t chunkId,std::vector<std::vector<DeltaInstruction>> &result) const;
+    void ProcessChunk(size_t start,size_t chunkId,std::vector<std::vector<DeltaInstruction>> &result) const;
     std::string sourcePath_;
     std::vector<BlockInfo> destBlocks_;
     size_t blockSize_;
+    size_t chunkSize_;
     std::unordered_map<std::pair<uint32_t,std::string>,size_t,PairHash> destHashToOffset;
     std::unordered_set<uint32_t> weakHashSet;
 };

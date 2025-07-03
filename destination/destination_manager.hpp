@@ -6,7 +6,7 @@
 #include "../common/result.hpp"
 class DestinationManager{
 public:
-    DestinationManager(const std::string& destinationPath,size_t blockSize);
+    DestinationManager(const std::string& destinationPath);
     Result<std::vector<BlockInfo>> getFileBlockHashes() const;
     Result<void> applyDelta(const std::vector<DeltaInstruction>& deltas);
 private:
