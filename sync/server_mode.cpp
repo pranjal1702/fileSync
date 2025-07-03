@@ -173,28 +173,33 @@ bool ServerMode::pullTransaction(int clientSocket){
 
     DataTransfer dataPipe;
     // 1. Receive remote file path
-    if (!dataPipe.receiveFilePath(clientSocket,remotePath)){ 
-        std::cerr << "Failed to receive remote path\n";
+    if (dataPipe.receiveFilePath(clientSocket,remotePath)){ 
+        dataPipe.sendStatus(clientSocket ,StatusMessage(true,"Recieved the remote file path"));
+    }else{
+        dataPipe.sendStatus(clientSocket ,StatusMessage(false,"Error while recieving remote path"));
         return false;
     }
 
     // recieve the block hashes
     std::vector<BlockInfo> blockHashes;
     if(dataPipe.receiveBlockHashes(clientSocket,blockHashes)){
-        std::cout<<"Block Hashes recieved successfully\n";
+        dataPipe.sendStatus(clientSocket ,StatusMessage(true,"Block hashes recieved successfully, Generating delta instructions..."));
     }else{
-        std::cerr<<"Error while recieving block hashes\n";
+        dataPipe.sendStatus(clientSocket ,StatusMessage(false,"Error while recieving block hashes"));
         return false;
     }
 
     // generate deltas
     SourceManager source(remotePath,blockHashes,8);  // 8 is taken as block size
     Result<std::vector<DeltaInstruction>> deltaResult=source.getDelta();
-    // send this deltas
-    if(dataPipe.serializeAndSendDeltaInstructions(clientSocket,deltaResult.data)){
-        std::cout<<"Deltas sent successfully\n";
+    if(deltaResult.success){
+        dataPipe.sendStatus(clientSocket ,StatusMessage(true,"Delta instructions generated successfully, Sending it over the channel"));
     }else{
-        std::cerr<<"Error while sending deltas\n";
+        dataPipe.sendStatus(clientSocket ,StatusMessage(false,"Error while generating delta:: " + deltaResult.message));
+        return false;
+    }
+    // send this deltas
+    if(!dataPipe.serializeAndSendDeltaInstructions(clientSocket,deltaResult.data)){
         return false;
     }
 
